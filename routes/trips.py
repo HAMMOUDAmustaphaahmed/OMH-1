@@ -96,22 +96,50 @@ def check_nom_voyage():
 def add():
     if request.method == 'POST':
         try:
-            # Générer le code unique du voyage
-            date_depart=datetime.strptime(request.form.get('date_depart'), '%Y-%m-%d').date(),
-            code_voyage = generate_voyage_code(date_depart)
+            # Récupérer et valider le nom du voyage
+            nom_voyage = request.form.get('nom_voyage')
+            if Trip.query.filter_by(nom_voyage=nom_voyage).first():
+                flash('Ce nom de voyage existe déjà.', 'danger')
+                return redirect(url_for('trips.add'))
+
+            # Parse les dates au format datetime-local
+            date_depart_str = request.form.get('date_depart')
+            date_depart = datetime.strptime(date_depart_str, '%Y-%m-%dT%H:%M')
+            
+            # Générer le code voyage basé sur la date de départ
+            code_voyage = f"V{date_depart.strftime('%y%m%d')}"
+            
+            # Trouver le dernier numéro pour ce jour
+            last_trip = Trip.query.filter(
+                Trip.code_voyage.like(f"{code_voyage}%")
+            ).order_by(Trip.code_voyage.desc()).first()
+
+            if last_trip:
+                last_num = int(last_trip.code_voyage[-2:])
+                new_num = str(last_num + 1).zfill(2)
+            else:
+                new_num = "01"
+
+            code_voyage = f"{code_voyage}{new_num}"
+
+            # Récupérer la date d'arrivée si elle existe
+            date_arrivee = None
+            if request.form.get('date_arrivee'):
+                date_arrivee = datetime.strptime(request.form.get('date_arrivee'), '%Y-%m-%dT%H:%M')
 
             # Création du voyage principal
             new_trip = Trip(
+                nom_voyage=nom_voyage,
+                code_voyage=code_voyage,
                 type=request.form.get('type'),
-                nom_voyage = request.form.get('nom_voyage'),
                 is_recurring=bool(request.form.getlist('recurring_days')),
                 recurring_days=','.join(request.form.getlist('recurring_days')) if request.form.getlist('recurring_days') else None,
                 point_depart=request.form.get('point_depart'),
                 point_arrivee=request.form.get('point_arrivee'),
-                date_depart=date_depart,
-                heure_depart=datetime.strptime(request.form.get('heure_depart'), '%H:%M').time() if request.form.get('heure_depart') else None,
-                date_arrivee=datetime.strptime(request.form.get('date_arrivee'), '%Y-%m-%d').date() if request.form.get('date_arrivee') else None,
-                heure_arrivee=datetime.strptime(request.form.get('heure_arrivee'), '%H:%M').time() if request.form.get('heure_arrivee') else None,
+                date_depart=date_depart.date(),
+                heure_depart=date_depart.time(),
+                date_arrivee=date_arrivee.date() if date_arrivee else None,
+                heure_arrivee=date_arrivee.time() if date_arrivee else None,
                 nombre_jours=request.form.get('nombre_jours', type=int),
                 nombre_adultes=request.form.get('nombre_adultes', 0, type=int),
                 nombre_enfants=request.form.get('nombre_enfants', 0, type=int),
@@ -134,9 +162,9 @@ def add():
                 new_trip.is_commission = True
 
             db.session.add(new_trip)
-            db.session.flush()  # Pour obtenir l'id_trip
+            db.session.flush()
 
-            # Gestion des affectations véhicules-chauffeurs
+            # Gestion des affectations
             vehicules = request.form.getlist('vehicules[]')
             chauffeurs = request.form.getlist('chauffeurs[]')
             
@@ -144,52 +172,10 @@ def add():
                 if vehicule_id and chauffeur_id:
                     affectation = TripAffectation(
                         id_trip=new_trip.id_trip,
-                        id_vehicule=vehicule_id,
-                        id_chauffeur=chauffeur_id
+                        id_vehicule=int(vehicule_id),
+                        id_chauffeur=int(chauffeur_id)
                     )
                     db.session.add(affectation)
-
-            # Gestion des dépenses supplémentaires
-            if request.form.getlist('depense_nom[]'):
-                noms = request.form.getlist('depense_nom[]')
-                prix_unitaires = request.form.getlist('depense_prix_unitaire[]')
-                nombres_personnes = request.form.getlist('depense_nombre_personnes[]')
-                
-                for nom, prix, nombre in zip(noms, prix_unitaires, nombres_personnes):
-                    if nom and prix and nombre:
-                        depense = TripDepense(
-                            id_trip=new_trip.id_trip,
-                            nom=nom,
-                            prix_unitaire=float(prix),
-                            nombre_personnes=int(nombre),
-                            total=float(prix) * int(nombre)
-                        )
-                        db.session.add(depense)
-
-            # Gestion du paiement
-            etat_paiement = request.form.get('etat_paiement')
-            if etat_paiement != 'Non payé':
-                paiement = Paiement(
-                    id_trip=new_trip.id_trip,
-                    mode_paiement=etat_paiement,
-                    montant_total=new_trip.prix_vente if new_trip.prix_vente else 0,
-                    montant_paye=0,
-                    recu_par=current_user.id_user
-                )
-
-                if etat_paiement == 'Chèque':
-                    paiement.banque = request.form.get('banque')
-                    paiement.numero_cheque = request.form.get('numero_cheque')
-                    
-                    if 'image_cheque' in request.files:
-                        file = request.files['image_cheque']
-                        if file and file.filename:
-                            filename = secure_filename(f"{new_trip.id_trip}_{file.filename}")
-                            filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], 'cheques', filename)
-                            file.save(filepath)
-                            paiement.image_cheque = f'cheques/{filename}'
-
-                db.session.add(paiement)
 
             db.session.commit()
             flash('Le voyage a été ajouté avec succès.', 'success')
@@ -197,16 +183,18 @@ def add():
             
         except Exception as e:
             db.session.rollback()
+            print(f"Erreur lors de l'ajout du voyage: {str(e)}")  # Pour le débogage
             flash(f'Une erreur est survenue : {str(e)}', 'danger')
             return redirect(url_for('trips.add'))
 
-    # GET request
+    # GET request - reste inchangé
     current_date = datetime.utcnow()
     vehicules = Vehicule.query.filter_by(etat='En marche').all()
     chauffeurs = Chauffeur.query.filter_by(statut='Actif').all()
-    return render_template('trips/add.html', vehicules=vehicules, chauffeurs=chauffeurs,current_date=current_date,utcnow= datetime.utcnow())
-
-
+    return render_template('trips/add.html', 
+                         vehicules=vehicules, 
+                         chauffeurs=chauffeurs,
+                         current_date=current_date)
 
 # Détails d'un voyage
 @trips_bp.route('/<int:trip_id>')

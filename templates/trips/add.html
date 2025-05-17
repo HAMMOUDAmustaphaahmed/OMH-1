@@ -28,6 +28,8 @@
                 </div>
             
         </div>
+        <form method="POST" action="{{ url_for('trips.add') }}" enctype="multipart/form-data">
+
         
         <!-- Formulaire -->
         <!-- Type de voyage -->
@@ -647,7 +649,7 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
-<!-- Boutons d'action -->
+<!-- Boutons d'action (laissez-les dans le form) -->
 <div class="form-actions">
     <button type="submit" class="btn btn-primary save-btn">
         <i class="fas fa-save"></i>
@@ -658,6 +660,7 @@ document.addEventListener('DOMContentLoaded', function() {
         Annuler
     </a>
 </div>
+</form>
 
 <style>
 /* Style pour la section des dépenses */
