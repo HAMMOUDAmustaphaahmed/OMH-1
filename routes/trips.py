@@ -1,14 +1,31 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, current_app
+from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
 from flask_login import login_required, current_user
-from models import Trip, TripAffectation, TripDepense, Paiement, Vehicule, Chauffeur, db
-from datetime import datetime, date, timedelta
-import os
-from werkzeug.utils import secure_filename
-from sqlalchemy import or_
+from models import db, Trip, TripAffectation, Vehicule, Chauffeur
+from sqlalchemy import or_, and_
+from datetime import datetime
+from sqlalchemy.orm import joinedload
 
 trips_bp = Blueprint('trips', __name__, url_prefix='/trips')
 
-# Liste des voyages avec filtres
+def generate_voyage_code(date_depart):
+    """Génère un code unique pour le voyage"""
+    # Format de base: V + YYMMDD
+    base_code = f"V{date_depart.strftime('%y%m%d')}"
+    
+    # Trouver le dernier numéro utilisé pour ce jour
+    last_trip = Trip.query.filter(
+        Trip.code_voyage.like(f"{base_code}%")
+    ).order_by(Trip.code_voyage.desc()).first()
+    
+    if last_trip:
+        last_num = int(last_trip.code_voyage[-2:])
+        new_num = str(last_num + 1).zfill(2)
+    else:
+        new_num = "01"
+    
+    return f"{base_code}{new_num}"
+
+# Dans routes/trips.py
 @trips_bp.route('/')
 @login_required
 def index():
@@ -22,8 +39,20 @@ def index():
     status = request.args.get('status')
     search = request.args.get('search')
 
-    # Construction de la requête
-    query = Trip.query
+    # Construction de la requête de base
+    query = Trip.query.join(
+        TripAffectation, 
+        Trip.id_trip == TripAffectation.id_trip, 
+        isouter=True  # Left outer join pour inclure les voyages sans affectation
+    ).join(
+        Vehicule,
+        TripAffectation.id_vehicule == Vehicule.id_vehicule,
+        isouter=True
+    ).join(
+        Chauffeur,
+        TripAffectation.id_chauffeur == Chauffeur.id_chauffeur,
+        isouter=True
+    )
 
     if type_voyage:
         query = query.filter(Trip.type == type_voyage)
@@ -38,7 +67,9 @@ def index():
             Trip.nom.ilike(f'%{search}%'),
             Trip.client_nom.ilike(f'%{search}%'),
             Trip.point_depart.ilike(f'%{search}%'),
-            Trip.point_arrivee.ilike(f'%{search}%')
+            Trip.point_arrivee.ilike(f'%{search}%'),
+            Vehicule.modele.ilike(f'%{search}%'),
+            Vehicule.matricule.ilike(f'%{search}%')
         ))
 
     # Tri
@@ -52,6 +83,12 @@ def index():
 
     trips = query.paginate(page=page, per_page=per_page)
     return render_template('trips/manage.html', trips=trips)
+@trips_bp.route('/check-nom-voyage')
+@login_required
+def check_nom_voyage():
+    nom = request.args.get('nom')
+    exists = Trip.query.filter_by(nom_voyage=nom).first() is not None
+    return jsonify({'exists': exists})
 
 # Ajouter un nouveau voyage
 @trips_bp.route('/add', methods=['GET', 'POST'])
@@ -59,15 +96,19 @@ def index():
 def add():
     if request.method == 'POST':
         try:
+            # Générer le code unique du voyage
+            date_depart=datetime.strptime(request.form.get('date_depart'), '%Y-%m-%d').date(),
+            code_voyage = generate_voyage_code(date_depart)
+
             # Création du voyage principal
             new_trip = Trip(
                 type=request.form.get('type'),
-                nom=request.form.get('nom'),
+                nom_voyage = request.form.get('nom_voyage'),
                 is_recurring=bool(request.form.getlist('recurring_days')),
                 recurring_days=','.join(request.form.getlist('recurring_days')) if request.form.getlist('recurring_days') else None,
                 point_depart=request.form.get('point_depart'),
                 point_arrivee=request.form.get('point_arrivee'),
-                date_depart=datetime.strptime(request.form.get('date_depart'), '%Y-%m-%d').date(),
+                date_depart=date_depart,
                 heure_depart=datetime.strptime(request.form.get('heure_depart'), '%H:%M').time() if request.form.get('heure_depart') else None,
                 date_arrivee=datetime.strptime(request.form.get('date_arrivee'), '%Y-%m-%d').date() if request.form.get('date_arrivee') else None,
                 heure_arrivee=datetime.strptime(request.form.get('heure_arrivee'), '%H:%M').time() if request.form.get('heure_arrivee') else None,
@@ -164,6 +205,8 @@ def add():
     vehicules = Vehicule.query.filter_by(etat='En marche').all()
     chauffeurs = Chauffeur.query.filter_by(statut='Actif').all()
     return render_template('trips/add.html', vehicules=vehicules, chauffeurs=chauffeurs,current_date=current_date,utcnow= datetime.utcnow())
+
+
 
 # Détails d'un voyage
 @trips_bp.route('/<int:trip_id>')

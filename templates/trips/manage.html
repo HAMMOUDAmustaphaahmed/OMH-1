@@ -135,24 +135,88 @@
                                     </div>
                                 </div>
                             </td>
-                            <td>
-                                <div class="vehicle-info">
-                                    <i class="fas fa-car"></i>
-                                    <span>{{ trip.vehicule.modele }}</span>
-                                </div>
-                            </td>
-                            <td>
-                                <div class="driver-info">
-                                    {% if trip.chauffeur.photo_url %}
-                                    <img src="{{ trip.chauffeur.photo_url }}" alt="Photo chauffeur" class="driver-avatar">
-                                    {% else %}
-                                    <div class="driver-initials">
-                                        {{ trip.chauffeur.prenom[0] }}{{ trip.chauffeur.nom[0] }}
-                                    </div>
-                                    {% endif %}
-                                    <span>{{ trip.chauffeur.prenom }} {{ trip.chauffeur.nom }}</span>
-                                </div>
-                            </td>
+                            <!-- Remplacer la cellule du véhicule -->
+<!-- Remplacer la cellule véhicule -->
+<td>
+    <div class="vehicle-info">
+        <i class="fas fa-car"></i>
+        {% set trip_affectations = trip.affectations %}
+        {% if trip_affectations %}
+            {% for affectation in trip_affectations %}
+                <span class="vehicle-details">
+                    {{ affectation.vehicule.modele }}
+                    <small>({{ affectation.vehicule.matricule }})</small>
+                </span>
+                {% if not loop.last %}, {% endif %}
+            {% endfor %}
+        {% else %}
+            <span class="text-muted">Non affecté</span>
+        {% endif %}
+    </div>
+</td>
+
+<!-- Remplacer la cellule chauffeur -->
+<td>
+    <div class="driver-info">
+        {% if trip_affectations %}
+            {% for affectation in trip_affectations %}
+                <div class="driver-details">
+                    <span>{{ affectation.chauffeur.prenom }} {{ affectation.chauffeur.nom }}</span>
+                </div>
+                {% if not loop.last %}, {% endif %}
+            {% endfor %}
+        {% else %}
+            <span class="text-muted">Non affecté</span>
+        {% endif %}
+    </div>
+</td>
+<style>
+    .vehicle-info,
+    .driver-info {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .vehicle-details,
+    .driver-details {
+        background-color: rgba(52, 152, 219, 0.1);
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .driver-details {
+        background-color: rgba(46, 204, 113, 0.1);
+    }
+    
+    .vehicle-details small {
+        color: #666;
+    }
+    
+    .driver-avatar,
+    .driver-initials {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+    }
+    
+    .driver-initials {
+        background-color: #3498db;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+    }
+    
+    .text-muted {
+        color: #6c757d;
+        font-style: italic;
+    }
+    </style>
                             <td>
                                 <span class="status-badge {{ trip.etat_trip|lower }}">
                                     <i class="fas fa-circle"></i>

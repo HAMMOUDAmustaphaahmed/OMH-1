@@ -129,6 +129,8 @@ class Trip(db.Model):
     __tablename__ = 'trips'
     
     id_trip = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    nom_voyage = db.Column(db.String(255), nullable=False, unique=True)
+    code_voyage = db.Column(db.String(10), nullable=False, unique=True)
     type = db.Column(db.Enum('Transfert', 'Transfert Société', 'Excursion', 'Événement', 'Mise à Disposition','Divers'), nullable=False)
     nom = db.Column(db.String(255))
     
