@@ -6,3 +6,4 @@ SQLAlchemy==1.4.46
 Werkzeug==2.2.2
 mysqlclient==2.1.1
 python-dotenv==0.21.0
+pymysql
